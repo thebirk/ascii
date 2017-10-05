@@ -1,6 +1,7 @@
 import "core:fmt.odin"
 import "core:os.odin"
 import "core:strings.odin"
+import "core:math.odin";
 
 import "shared:odin-glfw/glfw.odin"
 import "shared:odin-gl/gl.odin"
@@ -41,9 +42,9 @@ ascii_state: struct {
 	vbo, cbo, ibo: u32,
 	vao: u32,
 	uniforms: map[string]gl.Uniform_Info,
-	projection: [16]f32,
+	projection: math.Mat4,
 	close_window: bool,
-	num_vertices: i32,
+	indices_count: i32,
 };
 
 Font :: struct {
@@ -130,19 +131,20 @@ update_gl :: proc() {
 		}
 	}
 
-	ascii_state.num_vertices = cast(i32)len(vertices);
 	indices: [dynamic]u32;
 	offset := 0;
 	for i := 0; i < ascii_state.width*ascii_state.height; i += 1 {
 		append(&indices, cast(u32)(offset + 0));
 		append(&indices, cast(u32)(offset + 1));
 		append(&indices, cast(u32)(offset + 2));
+		
 		append(&indices, cast(u32)(offset + 2));
 		append(&indices, cast(u32)(offset + 3));
 		append(&indices, cast(u32)(offset + 0));
 
 		offset += 4;
 	}
+	ascii_state.indices_count = cast(i32)len(indices);
 
 	gl.BindVertexArray(ascii_state.vao);
 
@@ -152,7 +154,7 @@ update_gl :: proc() {
 	gl.EnableVertexAttribArray(3);
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, ascii_state.vbo);
-	gl.BufferData(gl.ARRAY_BUFFER, len(vertices), &vertices[0], gl.STATIC_DRAW);
+	gl.BufferData(gl.ARRAY_BUFFER, 4*2*len(vertices), &vertices[0], gl.STATIC_DRAW);
 	gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, 0, nil);
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, ascii_state.cbo);
@@ -164,7 +166,7 @@ update_gl :: proc() {
 	gl.VertexAttribPointer(3, 3, gl.FLOAT, gl.FALSE, 0, (cast(^rawptr) &ptr)^);
 
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ascii_state.ibo);
-	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices), &indices[0], gl.STATIC_DRAW);
+	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices)*4, &indices[0], gl.STATIC_DRAW);
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, 0);
 
@@ -175,18 +177,29 @@ update_gl :: proc() {
 }
 
 update_projection_matrix :: proc() {
-	window_width := ascii_state.width*ascii_state.font.cell_w;
-	window_height := ascii_state.height*ascii_state.font.cell_h;
+	/*window_width := ascii_state.width/**ascii_state.font.cell_w*/;
+	window_height := ascii_state.height/**ascii_state.font.cell_h*/;
 
-	ascii_state.projection[3 + 3 * 4] = 1;
+	Right := ascii_state.width;
+	Left := 0;
+	Top := 0;
+	Bottom := ascii_state.height;
+	Far := 1;
+	Near := -1;
 
-	ascii_state.projection[0 + 0 * 4] = 2.0 / cast(f32)(window_width);
-	ascii_state.projection[1 + 1 * 4] = 2.0 / -cast(f32)(window_height);
-	ascii_state.projection[2 + 2 * 4] = 2.0 / cast(f32)(-1 - 1);
+	ascii_state.projection[0 + 0 * 4] = 1.0;
+	ascii_state.projection[1 + 1 * 4] = 1.0;
+	ascii_state.projection[2 + 2 * 4] = 1.0;
+	ascii_state.projection[3 + 3 * 4] = 1.0;
 
-	ascii_state.projection[3 + 0 * 4] = (cast(f32)window_width) / (cast(f32)-window_width);
-	ascii_state.projection[3 + 1 * 4] = (cast(f32)window_height) / (cast(f32)window_height);
-	ascii_state.projection[3 + 2 * 4] = cast(f32)(1 + -1) / cast(f32)(-1 - 1);
+	ascii_state.projection[0 + 0 * 4] = cast(f32)(2.0 / (Right - Left));
+    ascii_state.projection[1 + 1 * 4] = cast(f32)(2.0 / (Top - Bottom));
+    ascii_state.projection[2 + 2 * 4] = cast(f32)(2.0 / (Near - Far));
+    ascii_state.projection[0 + 3 * 4] = cast(f32)((Left + Right) / (Left - Right));
+    ascii_state.projection[1 + 3 * 4] = cast(f32)((Bottom + Top) / (Bottom - Top));
+	ascii_state.projection[2 + 3 * 4] = cast(f32)((Far + Near) / (Near - Far));*/
+
+	ascii_state.projection = math.ortho3d(0, cast(f32)ascii_state.width, cast(f32)ascii_state.height, 0, 0, 0);
 }
 
 _init_callbacks :: proc() {
@@ -201,11 +214,11 @@ swap_buffers :: proc() {
 }
 
 update_and_render :: proc() -> bool {
+	gl.UseProgram(ascii_state.font_shader);
+	gl.UniformMatrix4fv(ascii_state.uniforms["projection"].location, 1, gl.FALSE, &ascii_state.projection[0][0]);
+
 	gl.BindVertexArray(ascii_state.vao);
-
-	gl.UniformMatrix4fv(ascii_state.uniforms["projection"].location, 1, gl.FALSE, &ascii_state.projection[0]);
-
-	gl.DrawElements(gl.TRIANGLES, ascii_state.num_vertices, gl.UNSIGNED_INT, nil);
+	gl.DrawElements(gl.TRIANGLES, ascii_state.indices_count, gl.UNSIGNED_INT, nil);
 
 	_update();
 	return ascii_state.close_window;

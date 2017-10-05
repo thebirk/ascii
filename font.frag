@@ -1,8 +1,8 @@
 #version 330 core
 
+flat in uint c;
 in vec3 fg;
 in vec3 bg;
-in int c;
 
 out vec4 color;
 
@@ -12,5 +12,5 @@ uniform uint cells_h;
 
 void main() {
 
-	color = vec4(1, 1, 1, 1);
+	color = vec4(1, 1, 0, 1);
 }
