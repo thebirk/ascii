@@ -85,8 +85,8 @@ open_window :: proc(title: string, width: int, height: int, font: Font, vsync: b
 	}
 
 	glfw.MakeContextCurrent(ascii_state.window);
-	set_proc_address :: proc(p: rawptr, name: string) { 
-    	(cast(^rawptr)p)^ = rawptr(glfw.GetProcAddress(&name[0]));
+	set_proc_address :: proc(p: rawptr, name: string) {
+		(cast(^rawptr)p)^ = rawptr(glfw.GetProcAddress(&name[0]));
 	}
 	gl.load_up_to(3, 3, set_proc_address);
 
@@ -294,14 +294,20 @@ foreign stb_image {
 	stbi_image_free :: proc(data: ^u8) #cc_c ---;
 }
 
+foreign_system_library "OpenGL32.lib";
+
+foreign OpenGL32 {
+	glGenTextures   :: proc(n: i32, dest: ^u32) #cc_c ---;
+	glBindTexture   :: proc(target: u32, texture: u32) #cc_c ---;
+	glTexImage2D    :: proc(target: u32, level: i32, internalformat: i32, width: i32, height: i32, border: i32, format: u32, type_: u32, pixels: rawptr) #cc_c ---;
+	glTexParameteri :: proc(target: u32, pname: u32, param: i32) #cc_c ---;
+}
+
 load_font :: proc(path: string, cell_w: int, cell_h: int) -> Font {
 	result: Font;
 
 	result.cell_w = cell_w;
 	result.cell_h = cell_h;
-
-	fmt.println(stbi_load);
-	fmt.println(stbi_image_free);
 
 	w, h, c: i32;
 	cpath := strings.new_c_string(path);
@@ -309,14 +315,12 @@ load_font :: proc(path: string, cell_w: int, cell_h: int) -> Font {
 	data := stbi_load(cpath, &w, &h, &c, 4);
 	defer stbi_image_free(data);
 
-	fmt.println(gl.GenTextures);
-	gl.GenTextures(1, &result.texture);
-	fmt.println("am i dumb?");
-	gl.BindTexture(gl.TEXTURE_2D, result.texture);
+	glGenTextures(1, &result.texture);
+	glBindTexture(gl.TEXTURE_2D, result.texture);
 
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, c == 4 ? gl.RGBA : gl.RGB, gl.UNSIGNED_BYTE, data);
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+	glTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, c == 4 ? gl.RGBA : gl.RGB, gl.UNSIGNED_BYTE, data);
+	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 	// read and load texture
 
 	return result;
