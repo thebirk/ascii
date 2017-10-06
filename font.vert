@@ -16,5 +16,8 @@ void main() {
 	bg = in_bg;
 	c = in_c;
 
+	// mat4 n = mat4(1);
+	// gl_Position = n * vec4(vert, 0.0, 1.0);
+
 	gl_Position = projection * vec4(vert, 0.0, 1.0);
 }

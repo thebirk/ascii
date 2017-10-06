@@ -3,9 +3,7 @@ import "core:fmt.odin"
 import "ascii.odin"
 
 main :: proc() {
-	font: ascii.Font;
-	font.cell_w = 8;
-	font.cell_h = 16;
+	font := ascii.load_font("bw_font.bmp", 8, 12);
 	ascii.open_window("ascii", 80, 25, font, true, true);	
 
 	// Switch to event

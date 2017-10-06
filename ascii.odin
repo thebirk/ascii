@@ -158,7 +158,7 @@ update_gl :: proc() {
 	gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, 0, nil);
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, ascii_state.cbo);
-	gl.BufferData(gl.ARRAY_BUFFER, 1, nil, gl.DYNAMIC_DRAW);
+	gl.BufferData(gl.ARRAY_BUFFER, len(ascii_state.glyphs)*28, nil, gl.DYNAMIC_DRAW);
 	gl.VertexAttribPointer(1, 1, gl.UNSIGNED_INT, gl.FALSE, 0, nil);
 	ptr := 4;
 	gl.VertexAttribPointer(2, 3, gl.FLOAT, gl.FALSE, 0, (cast(^rawptr) &ptr)^);
@@ -177,34 +177,25 @@ update_gl :: proc() {
 }
 
 update_projection_matrix :: proc() {
-	/*window_width := ascii_state.width/**ascii_state.font.cell_w*/;
-	window_height := ascii_state.height/**ascii_state.font.cell_h*/;
+	ascii_state.projection = math.ortho3d(0, cast(f32)ascii_state.width, cast(f32)ascii_state.height, 0, -1, 1);
+/*	ascii_state.projection[0][0] = 2.0 / cast(f32)(ascii_state.width-0);
+	ascii_state.projection[1][1] = 2.0 / cast(f32)(ascii_state.height-0);
+	ascii_state.projection[2][2] = -2.0 / cast(f32)(1.0 - -0.1);
+	ascii_state.projection[3][3] = 1;
 
-	Right := ascii_state.width;
-	Left := 0;
-	Top := 0;
-	Bottom := ascii_state.height;
-	Far := 1;
-	Near := -1;
-
-	ascii_state.projection[0 + 0 * 4] = 1.0;
-	ascii_state.projection[1 + 1 * 4] = 1.0;
-	ascii_state.projection[2 + 2 * 4] = 1.0;
-	ascii_state.projection[3 + 3 * 4] = 1.0;
-
-	ascii_state.projection[0 + 0 * 4] = cast(f32)(2.0 / (Right - Left));
-    ascii_state.projection[1 + 1 * 4] = cast(f32)(2.0 / (Top - Bottom));
-    ascii_state.projection[2 + 2 * 4] = cast(f32)(2.0 / (Near - Far));
-    ascii_state.projection[0 + 3 * 4] = cast(f32)((Left + Right) / (Left - Right));
-    ascii_state.projection[1 + 3 * 4] = cast(f32)((Bottom + Top) / (Bottom - Top));
-	ascii_state.projection[2 + 3 * 4] = cast(f32)((Far + Near) / (Near - Far));*/
-
-	ascii_state.projection = math.ortho3d(0, cast(f32)ascii_state.width, cast(f32)ascii_state.height, 0, 0, 0);
+	ascii_state.projection[3][0] = -(cast(f32)(ascii_state.width+0)/cast(f32)(ascii_state.width-0));
+	ascii_state.projection[3][0] = -(cast(f32)(ascii_state.height+0)/cast(f32)(ascii_state.height-0));
+	ascii_state.projection[3][0] = -(cast(f32)(1+-1)/cast(f32)(1-(-1)));*/
+	//ascii_state.projection = math.mat4_identity();
 }
 
 _init_callbacks :: proc() {
 	glfw.SetWindowCloseCallback(ascii_state.window, proc(window: ^glfw.window) #cc_c {
 		ascii_state.close_window = true;
+	});
+
+	glfw.SetFramebufferSizeCallback(ascii_state.window, proc(window: ^glfw.window, width, height: i32) #cc_c {
+		gl.Viewport(0, 0, width, height);
 	});
 }
 
@@ -215,9 +206,24 @@ swap_buffers :: proc() {
 
 update_and_render :: proc() -> bool {
 	gl.UseProgram(ascii_state.font_shader);
-	gl.UniformMatrix4fv(ascii_state.uniforms["projection"].location, 1, gl.FALSE, &ascii_state.projection[0][0]);
+	//gl.UniformMatrix4fv(ascii_state.uniforms["projection"].location, 1, gl.FALSE, &ascii_state.projection[0][0]);
+	proj := "projection\x00";
+	gl.UniformMatrix4fv(gl.GetUniformLocation(ascii_state.font_shader, &proj[0]), 1, gl.FALSE, &ascii_state.projection[0][0]);
+
+	cells_w := "cells_w\x00";
+	cells_h := "cells_h\x00";
+	gl.Uniform1i(gl.GetUniformLocation(ascii_state.font_shader, &cells_w[0]), cast(i32)ascii_state.font.cell_w);
+	gl.Uniform1i(gl.GetUniformLocation(ascii_state.font_shader, &cells_h[0]), cast(i32)ascii_state.font.cell_h);
 
 	gl.BindVertexArray(ascii_state.vao);
+
+	gl.BindTexture(gl.TEXTURE_2D, ascii_state.font.texture);
+
+	// Need to have a glyph for every vertex, not every character
+	// aka every glyph needs a second copy
+	gl.BindBuffer(gl.ARRAY_BUFFER, ascii_state.cbo);
+	gl.BufferSubData(gl.ARRAY_BUFFER, 0, len(ascii_state.glyphs)*28, &ascii_state.glyphs[0]);
+
 	gl.DrawElements(gl.TRIANGLES, ascii_state.indices_count, gl.UNSIGNED_INT, nil);
 
 	_update();
@@ -281,6 +287,12 @@ load_shader :: proc(vert, frag: string) -> u32 {
 // Replace the current font and recalculate window size, cell sizes, etc.
 // update_projection_matrix
 //update_font :: proc()
+foreign_library "stb_image.lib";
+
+foreign stb_image {
+	stbi_load       :: proc(file: ^u8, x: ^i32, y: ^i32, n: ^i32, req_comp: i32) -> ^u8 #cc_c ---;
+	stbi_image_free :: proc(data: ^u8) #cc_c ---;
+}
 
 load_font :: proc(path: string, cell_w: int, cell_h: int) -> Font {
 	result: Font;
@@ -288,6 +300,23 @@ load_font :: proc(path: string, cell_w: int, cell_h: int) -> Font {
 	result.cell_w = cell_w;
 	result.cell_h = cell_h;
 
+	fmt.println(stbi_load);
+	fmt.println(stbi_image_free);
+
+	w, h, c: i32;
+	cpath := strings.new_c_string(path);
+	defer free(cpath);
+	data := stbi_load(cpath, &w, &h, &c, 4);
+	defer stbi_image_free(data);
+
+	fmt.println(gl.GenTextures);
+	gl.GenTextures(1, &result.texture);
+	fmt.println("am i dumb?");
+	gl.BindTexture(gl.TEXTURE_2D, result.texture);
+
+	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, c == 4 ? gl.RGBA : gl.RGB, gl.UNSIGNED_BYTE, data);
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 	// read and load texture
 
 	return result;
