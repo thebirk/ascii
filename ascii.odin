@@ -55,18 +55,7 @@ Font :: struct {
 	texture: u32,
 }
 
-print_gl_info :: proc() {
-	get_string :: proc(name: u32) -> string {
-		cstr := gl.GetString(name);
-		return strings.to_odin_string(cstr);
-	}
-
-	fmt.println("GL_RENDERER:", get_string(gl.RENDERER));
-
-	fmt.println();
-}
-
-open_window :: proc(title: string, width: int, height: int, font: string, cell_w: int, cell_h: int, vsync: bool = true, resizable: bool = false) -> bool {
+init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: int, vsync: bool = true, resizable: bool = false) -> bool {
 	if glfw.Init() == 0 {
 		fmt.printf("Failed to init GLFW!");
 		return false;
@@ -75,6 +64,7 @@ open_window :: proc(title: string, width: int, height: int, font: string, cell_w
 	ascii_state.width = width;
 	ascii_state.height = height;
 
+	glfw.WindowHint(glfw.RESIZABLE, resizable ? glfw.TRUE : glfw.FALSE);
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3);
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3);
 
@@ -95,22 +85,14 @@ open_window :: proc(title: string, width: int, height: int, font: string, cell_w
 
 	_init_callbacks();
 
-	print_gl_info();
-
-	ascii_state.font = load_font(font, cell_w, cell_h);
+	_print_gl_info();
 
 	ascii_state.glyphs = make([]Glyph, width*height);
 	for i := 0; i < len(ascii_state.glyphs); i += 1 {
 		ascii_state.glyphs[i] = Glyph{};
 	}
 
-	/*ok: bool;
-	ascii_state.font_shader, ok = gl.load_shaders("font.vert", "font.frag");
-	if !ok {
-		fmt.println("Failed to compile shader");
-		os.exit(1);
-	}*/
-	ascii_state.font_shader = load_shader("font.vert", "font.frag");
+	ascii_state.font_shader = _load_shader("font.vert", "font.frag");
 
 	ascii_state.uniforms = gl.get_uniforms_from_program(ascii_state.font_shader);
 
@@ -121,16 +103,95 @@ open_window :: proc(title: string, width: int, height: int, font: string, cell_w
 	gl.GenBuffers(1, &ascii_state.ibo);
 	gl.GenVertexArrays(1, &ascii_state.vao);	
 
-	update_gl();
+	set_font(font, cell_w, cell_h);
+
+	_update_gl();
 
 	return true;
+}
+
+set_font :: proc(path: string, cell_w, cell_h: int) {
+	font := _load_font(path, cell_w, cell_h);
+
+	glfw.SetWindowSize(ascii_state.window, cast(i32)(ascii_state.width*cell_w), cast(i32)(ascii_state.height*cell_h));	
+
+	ascii_state.font = font;
 }
 
 set_glyph :: proc(x, y: int, glyph: Glyph) {
 	ascii_state.glyphs[x + y * ascii_state.width] = glyph;
 }
 
-update_gl :: proc() {
+set_glyph :: proc(x, y: int, char: u32, fg, bg: Color) {
+	ascii_state.glyphs[x + y * ascii_state.width].char = char;
+	ascii_state.glyphs[x + y * ascii_state.width].fg = fg;
+	ascii_state.glyphs[x + y * ascii_state.width].bg = bg;
+}
+
+swap_buffers :: proc() {
+	glfw.SwapBuffers(ascii_state.window);
+	gl.Clear(gl.COLOR_BUFFER_BIT);
+}
+
+update_and_render :: proc() -> bool {
+	gl.UseProgram(ascii_state.font_shader);
+	//gl.UniformMatrix4fv(ascii_state.uniforms["projection"].location, 1, gl.FALSE, &ascii_state.projection[0][0]);
+	proj := "projection\x00";
+	gl.UniformMatrix4fv(gl.GetUniformLocation(ascii_state.font_shader, &proj[0]), 1, gl.FALSE, &ascii_state.projection[0][0]);
+
+	cells_w := "cells_w\x00";
+	cells_h := "cells_h\x00";
+	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &cells_w[0]), cast(u32)ascii_state.font.cell_w);
+	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &cells_h[0]), cast(u32)ascii_state.font.cell_h);
+
+	font_w := "font_width\x00";
+	font_h := "font_height\x00";
+	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &font_w[0]), cast(u32)ascii_state.font.texture_width);
+	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &font_h[0]), cast(u32)ascii_state.font.texture_height);
+
+	sampler := "tex\x00";
+	gl.Uniform1i(gl.GetUniformLocation(ascii_state.font_shader, &sampler[0]), 0);
+
+	gl.BindVertexArray(ascii_state.vao);
+
+	// Need to have a glyph for every vertex, not every character
+	// aka every glyph needs a second copy
+	gl.BindBuffer(gl.ARRAY_BUFFER, ascii_state.cbo);
+	glyphs: [dynamic]Glyph;
+	for i := 0; i < len(ascii_state.glyphs); i += 1 {
+		append(&glyphs, ascii_state.glyphs[i]);
+		append(&glyphs, ascii_state.glyphs[i]);
+		append(&glyphs, ascii_state.glyphs[i]);
+		append(&glyphs, ascii_state.glyphs[i]);
+	}
+	defer free(glyphs);
+	gl.BufferSubData(gl.ARRAY_BUFFER, 0, len(glyphs)*28, &glyphs[0]);
+
+	gl.ActiveTexture(0);
+	gl.BindTexture(gl.TEXTURE_2D, ascii_state.font.texture);
+
+	gl.DrawElements(gl.TRIANGLES, ascii_state.indices_count, gl.UNSIGNED_INT, nil);
+
+	_update();
+	return ascii_state.close_window;
+}
+
+get_time :: proc() -> f64 {
+	return glfw.GetTime();
+}
+
+_print_gl_info :: proc() {
+	get_string :: proc(name: u32) -> string {
+		cstr := gl.GetString(name);
+		return strings.to_odin_string(cstr);
+	}
+
+	fmt.println("GL_RENDERER:", get_string(gl.RENDERER));
+
+	fmt.println();
+}
+
+_update_gl :: proc() {
 
 	vertices: [dynamic][2]f32;
 	for y := 0; y < ascii_state.height; y += 1 {
@@ -196,10 +257,10 @@ update_gl :: proc() {
 	free(vertices);
 	free(indices);
 
-	update_projection_matrix();	
+	_update_projection_matrix();	
 }
 
-update_projection_matrix :: proc() {
+_update_projection_matrix :: proc() {
 	ascii_state.projection = math.ortho3d(0, cast(f32)ascii_state.width, cast(f32)ascii_state.height, 0, -1, 1);
 /*	ascii_state.projection[0][0] = 2.0 / cast(f32)(ascii_state.width-0);
 	ascii_state.projection[1][1] = 2.0 / cast(f32)(ascii_state.height-0);
@@ -222,63 +283,11 @@ _init_callbacks :: proc() {
 	});
 }
 
-swap_buffers :: proc() {
-	glfw.SwapBuffers(ascii_state.window);
-	gl.Clear(gl.COLOR_BUFFER_BIT);
-}
-
-update_and_render :: proc() -> bool {
-	gl.UseProgram(ascii_state.font_shader);
-	//gl.UniformMatrix4fv(ascii_state.uniforms["projection"].location, 1, gl.FALSE, &ascii_state.projection[0][0]);
-	proj := "projection\x00";
-	gl.UniformMatrix4fv(gl.GetUniformLocation(ascii_state.font_shader, &proj[0]), 1, gl.FALSE, &ascii_state.projection[0][0]);
-
-	cells_w := "cells_w\x00";
-	cells_h := "cells_h\x00";
-	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &cells_w[0]), cast(u32)ascii_state.font.cell_w);
-	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &cells_h[0]), cast(u32)ascii_state.font.cell_h);
-
-	font_w := "font_width\x00";
-	font_h := "font_height\x00";
-	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &font_w[0]), cast(u32)ascii_state.font.texture_width);
-	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &font_h[0]), cast(u32)ascii_state.font.texture_height);
-
-	sampler := "tex\x00";
-	gl.Uniform1i(gl.GetUniformLocation(ascii_state.font_shader, &sampler[0]), 0);
-
-	gl.BindVertexArray(ascii_state.vao);
-
-	// Need to have a glyph for every vertex, not every character
-	// aka every glyph needs a second copy
-	gl.BindBuffer(gl.ARRAY_BUFFER, ascii_state.cbo);
-	glyphs: [dynamic]Glyph;
-	for i := 0; i < len(ascii_state.glyphs); i += 1 {
-		append(&glyphs, ascii_state.glyphs[i]);
-		append(&glyphs, ascii_state.glyphs[i]);
-		append(&glyphs, ascii_state.glyphs[i]);
-		append(&glyphs, ascii_state.glyphs[i]);
-	}
-	defer free(glyphs);
-	gl.BufferSubData(gl.ARRAY_BUFFER, 0, len(glyphs)*28, &glyphs[0]);
-
-	gl.ActiveTexture(0);
-	gl.BindTexture(gl.TEXTURE_2D, ascii_state.font.texture);
-
-	gl.DrawElements(gl.TRIANGLES, ascii_state.indices_count, gl.UNSIGNED_INT, nil);
-
-	_update();
-	return ascii_state.close_window;
-}
-
-get_time :: proc() -> f64 {
-	return glfw.GetTime();
-}
-
 _update :: proc() {
 	glfw.PollEvents();
 }
 
-load_shader :: proc(vert, frag: string) -> u32 {
+_load_shader :: proc(vert, frag: string) -> u32 {
 	result := gl.CreateProgram();
 
 	add_shader :: proc(program: u32, kind: u32, path: string) {
@@ -329,25 +338,31 @@ load_shader :: proc(vert, frag: string) -> u32 {
 }
 
 // Replace the current font and recalculate window size, cell sizes, etc.
-// update_projection_matrix
+// _update_projection_matrix
 //update_font :: proc()
-foreign_library "stb_image.lib";
+when ODIN_OS == "windows" do foreign_library "stb_image.lib";
 
 foreign stb_image {
 	stbi_load       :: proc(file: ^u8, x: ^i32, y: ^i32, n: ^i32, req_comp: i32) -> ^u8 #cc_c ---;
 	stbi_image_free :: proc(data: ^u8) #cc_c ---;
 }
 
-foreign_system_library "OpenGL32.lib";
-
-foreign OpenGL32 {
-	glGenTextures   :: proc(n: i32, dest: ^u32) #cc_c ---;
-	glBindTexture   :: proc(target: u32, texture: u32) #cc_c ---;
-	glTexImage2D    :: proc(target: u32, level: i32, internalformat: i32, width: i32, height: i32, border: i32, format: u32, type_: u32, pixels: rawptr) #cc_c ---;
-	glTexParameteri :: proc(target: u32, pname: u32, param: i32) #cc_c ---;
+when ODIN_OS == "windows" {
+	foreign_system_library "OpenGL32.lib";
+	foreign OpenGL32 {
+		glGenTextures   :: proc(n: i32, dest: ^u32) #cc_c ---;
+		glBindTexture   :: proc(target: u32, texture: u32) #cc_c ---;
+		glTexImage2D    :: proc(target: u32, level: i32, internalformat: i32, width: i32, height: i32, border: i32, format: u32, type_: u32, pixels: rawptr) #cc_c ---;
+		glTexParameteri :: proc(target: u32, pname: u32, param: i32) #cc_c ---;
+	}
+} else {
+	glGenTextures   := gl.glGenTextures;
+	glBindTexture   := gl.BindTexture;
+	glTexImage2D    := gl.TexImage2D;
+	glTexParameteri := gl.glTexParameteri;
 }
 
-load_font :: proc(path: string, cell_w: int, cell_h: int) -> Font {
+_load_font :: proc(path: string, cell_w: int, cell_h: int) -> Font {
 	result: Font;
 
 	result.cell_w = cell_w;

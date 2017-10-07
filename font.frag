@@ -26,7 +26,7 @@ void main() {
 	// color = vec4(1, 1, 0, 1);
 	vec4 texture_color = texture(tex, vec2(xx, yy));
 
-	if(texture_color.x == 1) {
+	if(texture_color.r == 1) {
 		color = vec4(fg, 1);
 	} else {
 		color = vec4(bg, 1);

@@ -3,7 +3,10 @@ import "core:fmt.odin"
 import "ascii.odin"
 
 main :: proc() {
-	ascii.open_window("ascii", 80, 25, "bw_font.png", 8, 12, true, true);
+	width := 80;
+	height := 24;
+	// ascii.init("ASCII :D", width, height, "fonts/bw_font.png", 8, 12, false, true)
+	ascii.init("ASCII :D", width, height, "fonts/VGA8x16.png", 8, 16, false, true);
 
 	// Switch to event
 	close := false;
@@ -12,8 +15,8 @@ main :: proc() {
 
 	for !close {
 		glyph: ascii.Glyph;
-		for y := 0; y < 25; y += 1 {
-			for x := 0; x < 80; x += 1 {
+		for y := 0; y < height; y += 1 {
+			for x := 0; x < width; x += 1 {
 				glyph.char += 1;
 				if glyph.char >= 255 do glyph.char = 0;
 
