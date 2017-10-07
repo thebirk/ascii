@@ -1,7 +1,7 @@
 import "core:fmt.odin"
 import "core:os.odin"
 import "core:strings.odin"
-import "core:math.odin";
+import "core:math.odin"
 
 import "shared:odin-glfw/glfw.odin"
 import "shared:odin-gl/gl.odin"
@@ -28,7 +28,7 @@ WHITE      := Color{1.0, 1.0, 1.0};
 LIGHT_GRAY := Color{0.5, 0.5, 0.5};
 
 Glyph :: struct #packed {
-	char: u32 = ' ',
+	char: u32 = 'A',
 	fg: Color = Color{0.5, 0.5, 0.5},
 	bg: Color = Color{0.0, 0.0, 0.0},
 }
@@ -50,6 +50,8 @@ ascii_state: struct {
 Font :: struct {
 	cell_w: int,
 	cell_h: int,
+	texture_width: i32,
+	texture_height: i32,
 	texture: u32,
 }
 
@@ -64,13 +66,12 @@ print_gl_info :: proc() {
 	fmt.println();
 }
 
-open_window :: proc(title: string, width: int, height: int, font: Font, vsync: bool = true, resizable: bool = false) -> bool {
+open_window :: proc(title: string, width: int, height: int, font: string, cell_w: int, cell_h: int, vsync: bool = true, resizable: bool = false) -> bool {
 	if glfw.Init() == 0 {
 		fmt.printf("Failed to init GLFW!");
 		return false;
 	}
 
-	ascii_state.font = font;
 	ascii_state.width = width;
 	ascii_state.height = height;
 
@@ -78,7 +79,7 @@ open_window :: proc(title: string, width: int, height: int, font: Font, vsync: b
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3);
 
 	title_p := "placeholder\x00";
-	ascii_state.window = glfw.CreateWindow(cast(i32) (width*font.cell_w), cast(i32) (height*font.cell_h), &title_p[0], nil, nil);
+	ascii_state.window = glfw.CreateWindow(cast(i32) (width*cell_w), cast(i32) (height*cell_h), &title_p[0], nil, nil);
 	if ascii_state.window == nil {
 		fmt.printf("Failed to create glfw window!");
 		return false;
@@ -90,13 +91,18 @@ open_window :: proc(title: string, width: int, height: int, font: Font, vsync: b
 	}
 	gl.load_up_to(3, 3, set_proc_address);
 
-	glfw.SwapInterval(1);
+	glfw.SwapInterval(vsync ? 1 : 0);
 
 	_init_callbacks();
 
 	print_gl_info();
 
+	ascii_state.font = load_font(font, cell_w, cell_h);
+
 	ascii_state.glyphs = make([]Glyph, width*height);
+	for i := 0; i < len(ascii_state.glyphs); i += 1 {
+		ascii_state.glyphs[i] = Glyph{};
+	}
 
 	/*ok: bool;
 	ascii_state.font_shader, ok = gl.load_shaders("font.vert", "font.frag");
@@ -120,16 +126,28 @@ open_window :: proc(title: string, width: int, height: int, font: Font, vsync: b
 	return true;
 }
 
+set_glyph :: proc(x, y: int, glyph: Glyph) {
+	ascii_state.glyphs[x + y * ascii_state.width] = glyph;
+}
+
 update_gl :: proc() {
+
 	vertices: [dynamic][2]f32;
 	for y := 0; y < ascii_state.height; y += 1 {
 		for x := 0; x < ascii_state.width; x += 1 {
 			append(&vertices, [2]f32{cast(f32)(x+0), cast(f32)(y+0)});
+			append(&vertices, [2]f32{cast(f32)(0), cast(f32)(0)});
+
 			append(&vertices, [2]f32{cast(f32)(x+1), cast(f32)(y+0)});
+			append(&vertices, [2]f32{cast(f32)(1), cast(f32)(0)});
+			
 			append(&vertices, [2]f32{cast(f32)(x+1), cast(f32)(y+1)});
+			append(&vertices, [2]f32{cast(f32)(1), cast(f32)(1)});
+			
 			append(&vertices, [2]f32{cast(f32)(x+0), cast(f32)(y+1)});
+			append(&vertices, [2]f32{cast(f32)(0), cast(f32)(1)});
 		}
-	}
+	}	
 
 	indices: [dynamic]u32;
 	offset := 0;
@@ -152,18 +170,23 @@ update_gl :: proc() {
 	gl.EnableVertexAttribArray(1);
 	gl.EnableVertexAttribArray(2);
 	gl.EnableVertexAttribArray(3);
+	gl.EnableVertexAttribArray(4);
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, ascii_state.vbo);
 	gl.BufferData(gl.ARRAY_BUFFER, 4*2*len(vertices), &vertices[0], gl.STATIC_DRAW);
-	gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, 0, nil);
+	stride: i32 = 8 + 8;
+	gl.VertexAttribPointer(0, 2, gl.FLOAT, gl.FALSE, stride, nil);
+	ptr := 2*4;
+	gl.VertexAttribPointer(1, 2, gl.FLOAT, gl.FALSE, stride, (cast(^rawptr) &ptr)^);
 
 	gl.BindBuffer(gl.ARRAY_BUFFER, ascii_state.cbo);
-	gl.BufferData(gl.ARRAY_BUFFER, len(ascii_state.glyphs)*28, nil, gl.DYNAMIC_DRAW);
-	gl.VertexAttribPointer(1, 1, gl.UNSIGNED_INT, gl.FALSE, 0, nil);
-	ptr := 4;
-	gl.VertexAttribPointer(2, 3, gl.FLOAT, gl.FALSE, 0, (cast(^rawptr) &ptr)^);
+	gl.BufferData(gl.ARRAY_BUFFER, len(ascii_state.glyphs)*28*4, nil, gl.DYNAMIC_DRAW);
+	stride = 4 + 12 + 12;
+	gl.VertexAttribIPointer(2, 1, gl.UNSIGNED_INT, stride, nil);
+	ptr = 4;
+	gl.VertexAttribPointer(3, 3, gl.FLOAT, gl.FALSE, stride, (cast(^rawptr) &ptr)^);
 	ptr = 16;
-	gl.VertexAttribPointer(3, 3, gl.FLOAT, gl.FALSE, 0, (cast(^rawptr) &ptr)^);
+	gl.VertexAttribPointer(4, 3, gl.FLOAT, gl.FALSE, stride, (cast(^rawptr) &ptr)^);
 
 	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ascii_state.ibo);
 	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices)*4, &indices[0], gl.STATIC_DRAW);
@@ -212,22 +235,43 @@ update_and_render :: proc() -> bool {
 
 	cells_w := "cells_w\x00";
 	cells_h := "cells_h\x00";
-	gl.Uniform1i(gl.GetUniformLocation(ascii_state.font_shader, &cells_w[0]), cast(i32)ascii_state.font.cell_w);
-	gl.Uniform1i(gl.GetUniformLocation(ascii_state.font_shader, &cells_h[0]), cast(i32)ascii_state.font.cell_h);
+	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &cells_w[0]), cast(u32)ascii_state.font.cell_w);
+	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &cells_h[0]), cast(u32)ascii_state.font.cell_h);
+
+	font_w := "font_width\x00";
+	font_h := "font_height\x00";
+	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &font_w[0]), cast(u32)ascii_state.font.texture_width);
+	gl.Uniform1ui(gl.GetUniformLocation(ascii_state.font_shader, &font_h[0]), cast(u32)ascii_state.font.texture_height);
+
+	sampler := "tex\x00";
+	gl.Uniform1i(gl.GetUniformLocation(ascii_state.font_shader, &sampler[0]), 0);
 
 	gl.BindVertexArray(ascii_state.vao);
-
-	gl.BindTexture(gl.TEXTURE_2D, ascii_state.font.texture);
 
 	// Need to have a glyph for every vertex, not every character
 	// aka every glyph needs a second copy
 	gl.BindBuffer(gl.ARRAY_BUFFER, ascii_state.cbo);
-	gl.BufferSubData(gl.ARRAY_BUFFER, 0, len(ascii_state.glyphs)*28, &ascii_state.glyphs[0]);
+	glyphs: [dynamic]Glyph;
+	for i := 0; i < len(ascii_state.glyphs); i += 1 {
+		append(&glyphs, ascii_state.glyphs[i]);
+		append(&glyphs, ascii_state.glyphs[i]);
+		append(&glyphs, ascii_state.glyphs[i]);
+		append(&glyphs, ascii_state.glyphs[i]);
+	}
+	defer free(glyphs);
+	gl.BufferSubData(gl.ARRAY_BUFFER, 0, len(glyphs)*28, &glyphs[0]);
+
+	gl.ActiveTexture(0);
+	gl.BindTexture(gl.TEXTURE_2D, ascii_state.font.texture);
 
 	gl.DrawElements(gl.TRIANGLES, ascii_state.indices_count, gl.UNSIGNED_INT, nil);
 
 	_update();
 	return ascii_state.close_window;
+}
+
+get_time :: proc() -> f64 {
+	return glfw.GetTime();
 }
 
 _update :: proc() {
@@ -315,13 +359,15 @@ load_font :: proc(path: string, cell_w: int, cell_h: int) -> Font {
 	data := stbi_load(cpath, &w, &h, &c, 4);
 	defer stbi_image_free(data);
 
+	result.texture_width = w;
+	result.texture_height = h;
+
 	glGenTextures(1, &result.texture);
 	glBindTexture(gl.TEXTURE_2D, result.texture);
 
 	glTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, c == 4 ? gl.RGBA : gl.RGB, gl.UNSIGNED_BYTE, data);
-	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-	// read and load texture
+	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
 	return result;
 }
