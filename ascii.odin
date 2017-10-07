@@ -28,7 +28,7 @@ WHITE      := Color{1.0, 1.0, 1.0};
 LIGHT_GRAY := Color{0.5, 0.5, 0.5};
 
 Glyph :: struct #packed {
-	char: u32 = 'A',
+	char: u32 = ' ',
 	fg: Color = Color{0.5, 0.5, 0.5},
 	bg: Color = Color{0.0, 0.0, 0.0},
 }
