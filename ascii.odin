@@ -145,6 +145,9 @@ swap_buffers :: proc() {
 
 update_and_render :: proc() -> bool {
 	gl.UseProgram(ascii_state.font_shader);
+
+	// Save the uniform location and don't look them up every
+	// god damn frame like a jackass
 	//gl.UniformMatrix4fv(ascii_state.uniforms["projection"].location, 1, gl.FALSE, &ascii_state.projection[0][0]);
 	proj := "projection\x00";
 	gl.UniformMatrix4fv(gl.GetUniformLocation(ascii_state.font_shader, &proj[0]), 1, gl.FALSE, &ascii_state.projection[0][0]);
@@ -394,6 +397,9 @@ when ODIN_OS == "windows" {
 		glTexParameteri :: proc(target: u32, pname: u32, param: i32) #cc_c ---;
 	}
 } else {
+	// This will most likely not work, based on the
+	// fact that the gl functions will not have been loaded
+	// when they are assigned...
 	glGenTextures   := gl.glGenTextures;
 	glBindTexture   := gl.BindTexture;
 	glTexImage2D    := gl.TexImage2D;
@@ -421,6 +427,9 @@ _load_font :: proc(path: string, cell_w: int, cell_h: int) -> Font {
 	glTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, c == 4 ? gl.RGBA : gl.RGB, gl.UNSIGNED_BYTE, data);
 	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+	// glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+	// glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
 	return result;
 }

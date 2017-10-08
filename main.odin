@@ -4,9 +4,9 @@ import "ascii.odin"
 
 main :: proc() {
 	width := 80;
-	height := 24;
-	ascii.init("ASCII :D", width, height, "fonts/bw_font.png", 8, 12, false, true);
-	// ascii.init("ASCII :D", width, height, "fonts/Bisasam_16x16.png", 16, 16, false, true);
+	height := 40;
+	// ascii.init("ASCII :D", width, height, "fonts/bw_font.png", 8, 12, false, true);
+	ascii.init("ASCII :D", width, height, "fonts/Bisasam_16x16.png", 16, 16, false, true);
 
 	// Switch to event
 	close := false;
@@ -47,8 +47,10 @@ main :: proc() {
 		
 
 		now := cast(f32)ascii.get_time();
+		frame_time := (now - lastTime)*1000;
 		fps := 1 / (now - lastTime);
 		draw_string(0, 1, fmt.bprintf(fps_buffer[..], "%f fps", fps), ascii.WHITE, ascii.BLACK);
+		draw_string(0, 2, fmt.bprintf(fps_buffer[..], "%f frame time (ms)", frame_time), ascii.WHITE, ascii.BLACK);
 		lastTime = now;
 
 		draw_string(20, 10, "Velkommen til bords!", ascii.WHITE, ascii.BLACK);
