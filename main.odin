@@ -11,18 +11,18 @@ main :: proc() {
 	// Switch to event
 	close := false;
 
-	time := cast(f32)ascii.get_time();
-
+	fps_buffer: [4096]u8;
+	lastTime := cast(f32)ascii.get_time();
 	for !close {
-		/*glyph: ascii.Glyph;
+		glyph: ascii.Glyph;
 		for y := 0; y < height; y += 1 {
 			for x := 0; x < width; x += 1 {
 				glyph.char += 1;
 				if glyph.char >= 255 do glyph.char = 0;
 
-				glyph.fg.r += 0.5 * time;
-				glyph.fg.g += 0.1 * time;
-				glyph.fg.b += 0.2 * time;
+				glyph.fg.r += 0.5 * lastTime;
+				glyph.fg.g += 0.1 * lastTime;
+				glyph.fg.b += 0.2 * lastTime;
 
 				if glyph.fg.r >= 1 do glyph.fg.r = 0;
 				if glyph.fg.g >= 1 do glyph.fg.g = 0;
@@ -34,18 +34,26 @@ main :: proc() {
 
 				ascii.set_glyph(x, y, glyph);
 			}
-		}*/
-		draw_string :: proc(x, y: int, str: string) {
+		}
+		draw_string :: proc(x, y: int, str: string, fg, bg: ascii.Color,) {
 			for c in str {
 				char := cast(u32)c;
 				if char > 255 do char = 255;
-				ascii.set_glyph(x, y, char, ascii.WHITE, ascii.BLACK);
+				ascii.set_glyph(x, y, char, fg, bg);
 				x += 1;
 			}
 		}
-		draw_string(0, 0, "Hello, world!");
+		draw_string(0, 0, "Hello, world!", ascii.WHITE, ascii.BLACK);
+		
 
-		draw_string(20, 10, "Velkommen til bords!");
+		now := cast(f32)ascii.get_time();
+		fps := 1 / (now - lastTime);
+		draw_string(0, 1, fmt.bprintf(fps_buffer[..], "%f fps", fps), ascii.WHITE, ascii.BLACK);
+		lastTime = now;
+
+		draw_string(20, 10, "Velkommen til bords!", ascii.WHITE, ascii.BLACK);
+		//ascii.draw_rect(20, 11, 10, 10, '#', ascii.WHITE, ascii.BLACK);
+		ascii.draw_fancy_rect(20, 11, 10, 10, 205, 205, 186, 186, 201, 187, 200, 188, ascii.Color{0.2, 1, 0.7}, ascii.Color{0.1, 0.4, 1});
 
 		close = ascii.update_and_render();
 		ascii.swap_buffers(); // Pull into update_and_render?

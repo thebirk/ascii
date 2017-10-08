@@ -10,11 +10,10 @@ export "events.odin"
 
 /*
 TODO:
-	- Create and open window
 	- Get a queue and the event system working
+
 	- On resize reallocate the cells and snap the window size to 
 	  fit the cell grid.
-
 	- Implement the ability to set a scale value, use float, prefer integer
 
 */
@@ -55,11 +54,21 @@ Font :: struct {
 	texture: u32,
 }
 
+when ODIN_OS == "windows" {
+	foreign_library "force_optimus.lib";
+
+	foreign force_optimus {
+		please_link_me :: proc() #cc_c ---;
+	}
+}
+
 init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: int, vsync: bool = true, resizable: bool = false) -> bool {
 	if glfw.Init() == 0 {
 		fmt.printf("Failed to init GLFW!");
 		return false;
 	}
+
+	when ODIN_OS == "windows" do please_link_me();
 
 	ascii_state.width = width;
 	ascii_state.height = height;
@@ -68,8 +77,9 @@ init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: in
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3);
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3);
 
-	title_p := "placeholder\x00";
-	ascii_state.window = glfw.CreateWindow(cast(i32) (width*cell_w), cast(i32) (height*cell_h), &title_p[0], nil, nil);
+	title_p := strings.new_c_string(title);
+	defer free(title_p);
+	ascii_state.window = glfw.CreateWindow(cast(i32) (width*cell_w), cast(i32) (height*cell_h), title_p, nil, nil);
 	if ascii_state.window == nil {
 		fmt.printf("Failed to create glfw window!");
 		return false;
@@ -178,6 +188,34 @@ update_and_render :: proc() -> bool {
 
 get_time :: proc() -> f64 {
 	return glfw.GetTime();
+}
+
+draw_rect :: proc(x, y: int, w, h: int, char: u32, fg, bg: Color) {
+	for xx := x; xx < x + w; xx += 1 {
+		set_glyph(xx, y + h, char, fg, bg);
+		set_glyph(xx, y, char, fg, bg);
+	}
+	for yy := y; yy < y + h; yy += 1 {
+		set_glyph(x, yy , char, fg, bg);
+		set_glyph(x+w, yy, char, fg, bg);
+	}
+	set_glyph(x+w, y+h, char, fg, bg);
+}
+
+draw_fancy_rect :: proc(x, y: int, w, h: int, top_border: u32, bottom_border: u32, left_border: u32, right_border: u32, top_left: u32, top_right: u32, bottom_left: u32, bottom_right: u32, fg, bg: Color) {
+	for xx := x; xx < x + w; xx += 1 {
+		set_glyph(xx, y + h, bottom_border, fg, bg);
+		set_glyph(xx, y, top_border, fg, bg);
+	}
+	for yy := y; yy < y + h; yy += 1 {
+		set_glyph(x, yy , left_border, fg, bg);
+		set_glyph(x+w, yy, right_border, fg, bg);
+	}
+
+	set_glyph(x, y, top_left, fg, bg);
+	set_glyph(x+w, y, top_right, fg, bg);
+	set_glyph(x, y+h, bottom_left, fg, bg);
+	set_glyph(x+w, y+h, bottom_right, fg, bg);
 }
 
 _print_gl_info :: proc() {
