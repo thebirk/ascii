@@ -6,7 +6,8 @@ main :: proc() {
 	width := 80;
 	height := 40;
 	// ascii.init("ASCII :D", width, height, "fonts/bw_font.png", 8, 12, false, true);
-	ascii.init("ASCII :D", width, height, "fonts/Bisasam_16x16.png", 16, 16, false, true);
+	// ascii.init("ASCII :D", width, height, "fonts/Bisasam_16x16.png", 16, 16, false, true);
+	ascii.init("ASCII :D", width, height, "fonts/CGA8x8thick.png", 8, 8, true, true);
 
 	// Switch to event
 	close := false;
@@ -56,6 +57,50 @@ main :: proc() {
 		draw_string(20, 10, "Velkommen til bords!", ascii.WHITE, ascii.BLACK);
 		//ascii.draw_rect(20, 11, 10, 10, '#', ascii.WHITE, ascii.BLACK);
 		ascii.draw_fancy_rect(20, 11, 10, 10, 205, 205, 186, 186, 201, 187, 200, 188, ascii.Color{0.2, 1, 0.7}, ascii.Color{0.1, 0.4, 1});
+
+		draw_rofl_copter :: proc(x, y: int) {
+			f1_line1 := "          :LOL:ROFL    ";
+			f1_line2 := "         ___^_____     ";
+			f1_line3 := "      __/      [] \\    ";
+			f1_line4 := "LOL===__           \\   ";
+			f1_line5 := "        \\___ ___ ___]  ";
+			f1_line6 := "            I   I      ";
+			f1_line7 := "          ----------/  ";
+
+			f2_line1 := "      ROFL:LOL:        ";
+			f2_line2 := "         ___^_____     ";
+			f2_line3 := " L    __/      [] \\    ";
+			f2_line4 := " O ===__           \\   ";
+			f2_line5 := " L      \\___ ___ ___]  ";
+			f2_line6 := "            I   I      ";
+			f2_line7 := "          ----------/  ";
+
+			width := len(f1_line1);
+			height := 7;
+
+			x -= width / 2;
+			y -= height / 2;
+
+
+			if cast(int)(ascii.get_time()*10) % 2 != 0 {
+				draw_string(x, y,   f1_line1, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+1, f1_line2, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+2, f1_line3, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+3, f1_line4, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+4, f1_line5, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+5, f1_line6, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+6, f1_line7, ascii.WHITE, ascii.BLACK);
+			} else {
+				draw_string(x, y,   f2_line1, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+1, f2_line2, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+2, f2_line3, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+3, f2_line4, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+4, f2_line5, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+5, f2_line6, ascii.WHITE, ascii.BLACK);
+				draw_string(x, y+6, f2_line7, ascii.WHITE, ascii.BLACK);
+			}
+		}
+		draw_rofl_copter(30, 30);
 
 		close = ascii.update_and_render();
 		ascii.swap_buffers(); // Pull into update_and_render?

@@ -6,6 +6,9 @@ import "core:math.odin"
 import "shared:odin-glfw/glfw.odin"
 import "shared:odin-gl/gl.odin"
 
+import "shared:odin-al/al.odin";
+import "shared:odin-al/alc.odin";
+
 export "events.odin"
 
 /*
@@ -32,26 +35,18 @@ Glyph :: struct #packed {
 	bg: Color = Color{0.0, 0.0, 0.0},
 }
 
-ascii_state: struct {
-	window: ^glfw.window,
-	width, height: int,
-	font: Font,
-	glyphs: []Glyph,
-	font_shader: u32,
-	vbo, cbo, ibo: u32,
-	vao: u32,
-	uniforms: map[string]gl.Uniform_Info,
-	projection: math.Mat4,
-	close_window: bool,
-	indices_count: i32,
-};
-
 Font :: struct {
 	cell_w: int,
 	cell_h: int,
 	texture_width: i32,
 	texture_height: i32,
 	texture: u32,
+}
+
+Sound :: struct {
+	source: u32,
+	buffer: u32,
+	data: ^i16,
 }
 
 when ODIN_OS == "windows" {
@@ -62,7 +57,7 @@ when ODIN_OS == "windows" {
 	}
 }
 
-init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: int, vsync: bool = true, resizable: bool = false) -> bool {
+init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: int, vsync: bool = true, resizable: bool = false, maximized: bool = false) -> bool {
 	if glfw.Init() == 0 {
 		fmt.printf("Failed to init GLFW!");
 		return false;
@@ -74,6 +69,7 @@ init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: in
 	ascii_state.height = height;
 
 	glfw.WindowHint(glfw.RESIZABLE, resizable ? glfw.TRUE : glfw.FALSE);
+	//glfw.WindowHint(glfw.MAXIMIZED, maximized ? glfw.TRUE : glfw.FALSE);
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3);
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 3);
 
@@ -94,6 +90,8 @@ init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: in
 	glfw.SwapInterval(vsync ? 1 : 0);
 
 	_init_callbacks();
+
+	if maximized do glfw.MaximizeWindow(ascii_state.window);
 
 	_print_gl_info();
 
@@ -117,6 +115,8 @@ init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: in
 
 	_update_gl();
 
+	_setup_sound();
+
 	return true;
 }
 
@@ -129,21 +129,18 @@ set_font :: proc(path: string, cell_w, cell_h: int) {
 }
 
 set_glyph :: proc(x, y: int, glyph: Glyph) {
+	if x < 0 || x >= ascii_state.width || y < 0 || y >= ascii_state.height do return;
 	ascii_state.glyphs[x + y * ascii_state.width] = glyph;
 }
 
 set_glyph :: proc(x, y: int, char: u32, fg, bg: Color) {
+	if x < 0 || x >= ascii_state.width || y < 0 || y >= ascii_state.height do return;
 	ascii_state.glyphs[x + y * ascii_state.width].char = char;
 	ascii_state.glyphs[x + y * ascii_state.width].fg = fg;
 	ascii_state.glyphs[x + y * ascii_state.width].bg = bg;
 }
 
-swap_buffers :: proc() {
-	glfw.SwapBuffers(ascii_state.window);
-	gl.Clear(gl.COLOR_BUFFER_BIT);
-}
-
-update_and_render :: proc() -> bool {
+update_and_render :: proc() {
 	gl.UseProgram(ascii_state.font_shader);
 
 	// Save the uniform location and don't look them up every
@@ -186,11 +183,15 @@ update_and_render :: proc() -> bool {
 	gl.DrawElements(gl.TRIANGLES, ascii_state.indices_count, gl.UNSIGNED_INT, nil);
 
 	_update();
-	return ascii_state.close_window;
+	_swap_buffers();
 }
 
 get_time :: proc() -> f64 {
 	return glfw.GetTime();
+}
+
+get_event :: proc() -> Event {
+	return queue_unqueue(&ascii_state.event_queue);
 }
 
 draw_rect :: proc(x, y: int, w, h: int, char: u32, fg, bg: Color) {
@@ -219,6 +220,95 @@ draw_fancy_rect :: proc(x, y: int, w, h: int, top_border: u32, bottom_border: u3
 	set_glyph(x+w, y, top_right, fg, bg);
 	set_glyph(x, y+h, bottom_left, fg, bg);
 	set_glyph(x+w, y+h, bottom_right, fg, bg);
+}
+
+when ODIN_OS == "windows" {
+	foreign_library "dr_wav.lib";
+} else {
+	_ := compile_assert(false);
+}
+
+foreign dr_wav {
+	drwav_open_and_read_file_s16 :: proc(filename: ^u8, channels: ^u32, sampleRate: ^u32, totalSampleCount: ^u64) -> ^i16 #cc_c ---;
+	drwav_free :: proc(pDataReturnedByOpenAndRead: ^u8) #cc_c ---;
+}
+
+load_sound :: proc(filename: string) -> Sound {
+	result: Sound;
+
+	c_filename := strings.new_c_string(filename);
+	defer free(c_filename);
+	channels : u32;
+	sample_rate : u32;
+	sample_count : u64;
+	result.data = drwav_open_and_read_file_s16(c_filename, &channels, &sample_rate, &sample_count);
+	if result.data == nil {
+		fmt.println("Failed to open sound", filename);
+		os.exit(1);
+	}
+
+	al.GenBuffers(1, &result.buffer);
+	al.BufferData(result.buffer, channels > 1 ? al.FORMAT_STEREO16 : al.FORMAT_MONO16, cast(^u8)result.data, cast(i32)(sample_count*2), cast(i32)sample_rate);
+
+	al.GenSources(1, &result.source);
+	al.Source3f(result.source, al.POSITION, 0, 0, 0);
+	al.Source3f(result.source, al.VELOCITY, 0, 0, 0);
+	al.Sourcei(result.source, al.BUFFER, cast(i32)result.buffer);
+
+	return result;
+}
+
+play_sound :: proc(sound: Sound, loop: bool = false, gain: f32 = 1, pitch: f32 = 1) {
+	al.Sourcef(sound.source, al.PITCH, pitch);
+	al.Sourcef(sound.source, al.GAIN, gain);
+	al.Sourcei(sound.source, al.LOOPING, loop ? al.TRUE : al.FALSE);
+	al.SourcePlay(sound.source);
+}
+
+stop_sound :: proc(sound: Sound) {
+	al.SourceRewind(sound.source);
+}
+
+ascii_state: struct {
+	window: ^glfw.window,
+	width, height: int,
+	font: Font,
+	glyphs: []Glyph,
+	font_shader: u32,
+	vbo, cbo, ibo: u32,
+	vao: u32,
+	uniforms: map[string]gl.Uniform_Info,
+	projection: math.Mat4,
+	close_window: bool,
+	indices_count: i32,
+	event_queue: Event_Queue,
+};
+
+_swap_buffers :: proc() {
+	glfw.SwapBuffers(ascii_state.window);
+	gl.Clear(gl.COLOR_BUFFER_BIT);
+}
+
+_setup_sound :: proc() {
+	device := alc.OpenDevice(nil);
+	if device == nil {
+		fmt.println("Failed to open default audio device!");
+		return;
+	}
+
+	audio_context := alc.CreateContext(device, nil);
+	if alc.MakeContextCurrent(audio_context) == al.FALSE {
+		fmt.println("Failed to make audio context current!");
+		return;
+	}
+
+	al.Listener3f(al.POSITION, 0, 0, 0);
+	al.Listener3f(al.VELOCITY, 0, 0, 0);
+	orient := []f32 {
+		0, 0, 1,
+		0, 1, 0,
+	};
+	al.Listenerfv(al.ORIENTATION, &orient[0]);
 }
 
 _print_gl_info :: proc() {
@@ -315,8 +405,20 @@ _update_projection_matrix :: proc() {
 }
 
 _init_callbacks :: proc() {
+	ascii_state.event_queue = queue_new();
+
 	glfw.SetWindowCloseCallback(ascii_state.window, proc(window: ^glfw.window) #cc_c {
-		ascii_state.close_window = true;
+		queue_enqueue(&ascii_state.event_queue, QuitEvent{});
+	});
+
+	glfw.SetKeyCallback(ascii_state.window, proc(window: ^glfw.window, key: i32, scancode: i32, action: i32, mods: i32) #cc_c {
+		queue_enqueue(&ascii_state.event_queue, KeyEvent{
+			down = (action == glfw.PRESS || action == glfw.REPEAT) ? true : false,
+			repeat = action == glfw.REPEAT ? true : false,
+			key = cast(Key)key,
+			mods = int(mods),
+			scancode = int(scancode),
+		});
 	});
 
 	glfw.SetFramebufferSizeCallback(ascii_state.window, proc(window: ^glfw.window, width, height: i32) #cc_c {
@@ -427,9 +529,6 @@ _load_font :: proc(path: string, cell_w: int, cell_h: int) -> Font {
 	glTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, c == 4 ? gl.RGBA : gl.RGB, gl.UNSIGNED_BYTE, data);
 	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 	glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
-	// glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	// glTexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
 	return result;
 }
