@@ -13,11 +13,18 @@ export "events.odin"
 
 /*
 TODO:
-	- Get a queue and the event system working
+	- Implement the ability to have padding in the font texture so that we dont
+	  get scaling artifacts.
 
 	- On resize reallocate the cells and snap the window size to 
-	  fit the cell grid.
+	  fit the cell grid. Call it responsive mode, add procs to get width and height.
+	  Probably add a responsive mode resize event.
+	  	Then implement a text editor, because why not, you already have the buffer dick nugget
+
+
 	- Implement the ability to set a scale value, use float, prefer integer
+
+	- Add more events
 
 */
 
@@ -28,6 +35,8 @@ Color :: struct #packed {
 BLACK      := Color{0.0, 0.0, 0.0};
 WHITE      := Color{1.0, 1.0, 1.0};
 LIGHT_GRAY := Color{0.5, 0.5, 0.5};
+RED        := Color{1.0, 0.0, 0.0};
+GREEN      := Color{0.0, 1.0, 0.0};
 
 Glyph :: struct #packed {
 	char: u32 = ' ',
@@ -57,7 +66,7 @@ when ODIN_OS == "windows" {
 	}
 }
 
-init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: int, vsync: bool = true, resizable: bool = false, maximized: bool = false) -> bool {
+init :: proc(title: string, window_width, window_height: int, width, height: int, font: string, cell_w, cell_h: int, vsync: bool = true, resizable: bool = false, maximized: bool = false) -> bool {
 	if glfw.Init() == 0 {
 		fmt.printf("Failed to init GLFW!");
 		return false;
@@ -75,7 +84,8 @@ init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: in
 
 	title_p := strings.new_c_string(title);
 	defer free(title_p);
-	ascii_state.window = glfw.CreateWindow(cast(i32) (width*cell_w), cast(i32) (height*cell_h), title_p, nil, nil);
+	// ascii_state.window = glfw.CreateWindow(cast(i32) (width*cell_w), cast(i32) (height*cell_h), title_p, nil, nil);
+	ascii_state.window = glfw.CreateWindow(cast(i32) (window_width), cast(i32) (window_height), title_p, nil, nil);
 	if ascii_state.window == nil {
 		fmt.printf("Failed to create glfw window!");
 		return false;
@@ -123,7 +133,8 @@ init :: proc(title: string, width, height: int, font: string, cell_w, cell_h: in
 set_font :: proc(path: string, cell_w, cell_h: int) {
 	font := _load_font(path, cell_w, cell_h);
 
-	glfw.SetWindowSize(ascii_state.window, cast(i32)(ascii_state.width*cell_w), cast(i32)(ascii_state.height*cell_h));	
+	// changed because resons
+	//glfw.SetWindowSize(ascii_state.window, cast(i32)(ascii_state.width*cell_w), cast(i32)(ascii_state.height*cell_h));	
 
 	ascii_state.font = font;
 }
@@ -204,6 +215,20 @@ draw_rect :: proc(x, y: int, w, h: int, char: u32, fg, bg: Color) {
 		set_glyph(x+w, yy, char, fg, bg);
 	}
 	set_glyph(x+w, y+h, char, fg, bg);
+}
+
+draw_string :: proc(x, y: int, str: string, fg, bg: Color) {
+	for c in str {
+		char := cast(u32)c;
+		if char > 255 do char = 255;
+		set_glyph(x, y, char, fg, bg);
+		x += 1;
+	}
+}
+
+draw_centered_string :: proc(x, y: int, str: string, fg, bg: Color) {
+	x -= len(str) / 2;
+	draw_string(x, y, str, fg, bg);
 }
 
 draw_fancy_rect :: proc(x, y: int, w, h: int, top_border: u32, bottom_border: u32, left_border: u32, right_border: u32, top_left: u32, top_right: u32, bottom_left: u32, bottom_right: u32, fg, bg: Color) {
@@ -295,6 +320,9 @@ _setup_sound :: proc() {
 		fmt.println("Failed to open default audio device!");
 		return;
 	}
+
+	device_name := strings.to_odin_string(alc.GetString(device, alc.DEVICE_SPECIFIER));
+	fmt.println(device_name);
 
 	audio_context := alc.CreateContext(device, nil);
 	if alc.MakeContextCurrent(audio_context) == al.FALSE {
