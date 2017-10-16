@@ -59,7 +59,7 @@ Sound :: struct {
 }
 
 when ODIN_OS == "windows" {
-	foreign_library "force_optimus.lib";
+	foreign import "force_optimus.lib";
 
 	foreign force_optimus {
 		please_link_me :: proc() #cc_c ---;
@@ -248,7 +248,7 @@ draw_fancy_rect :: proc(x, y: int, w, h: int, top_border: u32, bottom_border: u3
 }
 
 when ODIN_OS == "windows" {
-	foreign_library "dr_wav.lib";
+	foreign import "dr_wav.lib";
 } else {
 	_ := compile_assert(false);
 }
@@ -511,7 +511,7 @@ _load_shader :: proc(vert, frag: string) -> u32 {
 // Replace the current font and recalculate window size, cell sizes, etc.
 // _update_projection_matrix
 //update_font :: proc()
-when ODIN_OS == "windows" do foreign_library "stb_image.lib";
+when ODIN_OS == "windows" do foreign import "stb_image.lib";
 
 foreign stb_image {
 	stbi_load       :: proc(file: ^u8, x: ^i32, y: ^i32, n: ^i32, req_comp: i32) -> ^u8 #cc_c ---;
@@ -519,7 +519,7 @@ foreign stb_image {
 }
 
 when ODIN_OS == "windows" {
-	foreign_system_library "OpenGL32.lib";
+	foreign import "system:OpenGL32.lib";
 	foreign OpenGL32 {
 		glGenTextures   :: proc(n: i32, dest: ^u32) #cc_c ---;
 		glBindTexture   :: proc(target: u32, texture: u32) #cc_c ---;
